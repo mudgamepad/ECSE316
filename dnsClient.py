@@ -24,7 +24,6 @@ def parse_args():
 
 
 def validate_args(args):
-    # TODO
     return args
 
 
