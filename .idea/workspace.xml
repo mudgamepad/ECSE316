@@ -4,10 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="7ecbd150-287c-4f1f-8ff6-6e8273dbd1c2" name="Changes" comment="Initial commit + input handling">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/dnsClient.py" beforeDir="false" afterPath="$PROJECT_DIR$/dnsClient.py" afterDir="false" />
-    </list>
+    <list default="true" id="7ecbd150-287c-4f1f-8ff6-6e8273dbd1c2" name="Changes" comment="Initial commit + input handling" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -72,7 +69,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1728062857079</updated>
-      <workItem from="1728062858474" duration="9460000" />
+      <workItem from="1728062858474" duration="9775000" />
     </task>
     <servers />
   </component>
