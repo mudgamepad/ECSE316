@@ -2,6 +2,7 @@ import argparse
 import random
 import socket
 import time
+import sys
 
 
 def parse_args():
@@ -27,9 +28,36 @@ def parse_args():
 
 
 def validate_args(args):
-    # TODO
-    # Check that timeout >= 0
-    return
+    error = ""
+    is_error = False
+
+    # Validate timeout
+    if args.timeout < 0:
+        is_error = True
+        error += f"ERROR    Timeout must be non-negative\n"
+
+    # Validate max_retries
+    if args.max_retries < 0:
+        is_error = True
+        error += f"ERROR    Max-retries must be non-negative\n"
+
+    # Validate port number (port)
+    if not (0 <= args.port <= 65535):
+        is_error = True
+        error += f"ERROR    Invalid port number. Must be in range [0, 65535]\n"
+
+    # Validate ip address (server)
+    ip = args.server.lstrip('@')  # remove leading '@' if there is one
+    ip_segments = ip.split('.')
+
+    # ip address must have 4 numbers delineated by periods, each number in range [0, 255]
+    if len(ip_segments != 4):
+        is_error = True
+        error += f"ERROR    Invalid server IP address format. Must be in 'a.b.c.d' format\n"
+
+    if is_error:
+        print(error)
+        sys.exit(1)
 
 
 def build_request(args):
@@ -90,18 +118,24 @@ def send_request(args, packet, request_type):
     # Create UDP socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # AF_INET specifies IPV4 address family, SOCK_DGRAM
     # specifies UDP socket rather than TCP
+    sock.settimeout(args.timeout)
 
     num_retries = 0  # keep track of retries
     start_time = time.time()  # timer
 
     while num_retries <= args.max_retries:
         try:
+            # Strip @ from ip
+            ip = args.server.lstrip('@')
+
             # Send DNS query
-            sock.sendto(packet, (args.server, args.port))
+            sock.sendto(packet, (ip, args.port))
 
             response = sock.recvfrom(512)
 
             print(f"Response received after {time.time() - start_time} seconds ({num_retries} retries)")
+
+            sock.close()
 
             return response
 
@@ -112,13 +146,12 @@ def send_request(args, packet, request_type):
         # General error handling
         except Exception as e:
             print(f"ERROR   {e}")
-
-        # Close socket
-        finally:
-            sock.close()
+            sys.exit(1)
 
     # No success before max retries
     print(f"ERROR   Maximum number of retries {args.max_retries} exceeded")
+    sock.close()
+    sys.exit(1)
 
 
 def parse_response(packet):
@@ -133,6 +166,7 @@ def parse_response(packet):
         # TODO handle unexpected response
     else:
         print(f"NOT FOUND")
+        sys.exit(1)
 
 
 def main():
