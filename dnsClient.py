@@ -1,4 +1,50 @@
 import argparse
+import random
+import socket
+
+
+class DNSPacket:
+    def __init__(self, header, question, answer, additional):
+        self.header = header
+        self.question = question
+        self.answer = answer
+        self.additional = additional
+
+
+class Header:
+    def __init__(self, ID, QR, OPCODE, AA, TC, RD, RA, Z, RDCODE, QDCOUNT, ANCOUNT, NSCOUNT, ARCOUNT):
+        self.ID = ID
+        self.QR = QR
+        self.OPCODE = OPCODE
+        self.AA = AA
+        self.TC = TC
+        self.RD = RD
+        self.RA = RA
+        self.Z = Z
+        self.RDCODE = RDCODE
+        self.QDCOUNT = QDCOUNT
+        self.ANCOUNT = ANCOUNT
+        self.NSCOUNT = NSCOUNT
+        self.ARCOUNT = ARCOUNT
+
+
+class Question:
+    def __init__(self, QNAME, QTYPE, QCLASS):
+        self.QNAME = QNAME
+        self.QTYPE = QTYPE
+        self.QCLASS = QCLASS
+
+
+class Answer:
+    def __init__(self, NAME, TYPE, CLASS, TTL, RDLENGTH, RDATA, REFERENCE, EXCHANGE):
+        self.NAME = NAME
+        self.TYPE = TYPE
+        self.CLASS = CLASS
+        self.TTL = TTL
+        self.RDLENGTH = RDLENGTH
+        self.RDATA = RDATA
+        self.REFERENCE = REFERENCE
+        self.EXCHANGE = EXCHANGE
 
 
 def parse_args():
@@ -24,100 +70,52 @@ def parse_args():
 
 
 def validate_args(args):
-    return args
+    # TODO
+    return
 
 
-def execute_query(args):
-    if args.mx:
-        print("MX query")
-    elif args.ns:
-        print("NS query")
-    else:
-        print("A query")
+def build_request():
+
+    # Create header
+    random_int = random.randint(0, 0xFFFF)  # create random 16-bit number
+    id = '0x' + f'{random_int:04x}'  # format random int as a 4-digit hex number prepended with 0x
+    flags = 0x0100  # qr, opcode, aa, tc, rd, ra, z and rcode combined into 16-bits
+    qd_count = 1  # 1 question per packet
+    an_count = 0  # only matters for response
+    ns_count = 0  # instructions say we can ignore
+    ar_count = 0  # only matters for response
+
+    header = (
+        id.to_bytes(2, 'big') +
+        flags.to_bytes(2, 'big') +
+        qd_count.to_bytes(2, 'big') +
+        an_count.to_bytes(2, 'big') +
+        ns_count.to_bytes(2, 'big') +
+        ar_count.to_bytes(2, 'big')
+    )
+    
+    # Encode domain name (QNAME)
+
+    # Define QTYPE and QCLASS
+
+    # Question = QNAME + QTYPE + QCLASS
+
+    # Combine header and question
+    return
 
 
 def main():
     # Parse command line arguments
     args = parse_args()
 
+    # Validate input
+
+    # TODO construct DNS request packet
+
+    # TODO Send request packet to specified DNS server using UDP and socket
+
+    # Output
+
 
 if __name__ == "__main__":
     main()
-
-
-------------------------------------------------------------------------
-
-from random import *
-
-class DnsPacket:
-    def _init_(self,header,question,answer,additional):
-         self.header = header
-         self.question = question
-         self.answer = answer
-         self.additional = additional
-         
-class Header:
-    def _init_(self,ID,QR,OPCODE,AA,TC,RD,RA,Z,RDCODE,QDCOUNT,ANCOUNT,NSCOUNT,ARCOUNT):
-        self.ID = ID
-        self.QR = QR
-        self.OPCODE = OPCODE
-        self.AA = AA
-        self.TC = TC
-        self.RD = RD
-        self.RA = RA
-        self.Z = Z
-        self.RDCODE = RDCODE
-        self.QDCOUNT = QDCOUNT
-        self.ANCOUNT = ANCOUNT
-        self.NSCOUNT = NSCOUNT
-        self.ARCOUNT = ARCOUNT
-        
-class Question:
-    def _init_(self,QNAME,QTYPE,QCLASS):
-        self.QNAME = QNAME
-        self.QTYPE = QTYPE
-        self.QCLASS = QCLASS
-
-class Answer:
-    def _init_(self,NAME,TYPE,CLASS,TTL,RDLENGTH,RDATA,REFERENCE,EXCHANGE):
-        self.NAME = NAME
-        self.TYPE = TYPE
-        self.CLASS = CLASS
-        self.TTL = TTL
-        self.RDLENGTH = RDLENGTH
-        self.RDATA = RDATA
-        self.REFERENCE = REFERENCE
-        self.EXCHANGE = EXCHANGE
-        
-def find(s,l):
-    for i in range(len(l)):
-        if l[i] == s:
-            return i
-    return -1
-
-def getTimeOut(l):
-    f = find("-t",l)
-    if f == -1:
-        return 5
-    return l[f + 1]
-
-def maxRetries(l):
-    f = find("-r",l)
-    if f == -1:
-        return 3
-    return l[f + 1]
-
-def port(l):
-    f = find("-p",l)
-    if f == -1:
-        return 53
-    return l[f + 1]
-
-def flag(l):
-    f = find("-mx",l)
-    if f == -1:
-        f = find("-ns",l)
-        if f == -1:
-            return "-a"
-        return "-ns"
-    return "-mx"
