@@ -52,17 +52,17 @@ def parse_args():
 
     parser.add_argument('-t', '--timeout', type=int, default=5)  # how long to wait, in seconds, before
     # retransmitting an unanswered query
-    parser.add_argument('r', '--max_retries', type=int, default=3)  # maximum number of times to retransmit an
+    parser.add_argument('-r', '--max_retries', type=int, default=3)  # maximum number of times to retransmit an
     # unanswered query before giving up
     parser.add_argument('-p', '--port', type=int, default=53)  # UDP port number of the DNS server
 
     # Create mutually exclusive group for mx, ns
     group = parser.add_mutually_exclusive_group()
     group.add_argument('-mx', action='store_true')  # send MX (mail server)
-    group.add_argument('ns', action='store_true')  # send NS (name server)
+    group.add_argument('-ns', action='store_true')  # send NS (name server)
 
-    parser.add_argument('server')
-    parser.add_argument('name')
+    parser.add_argument('server', help="Provide IPv4 address of the DNS server, in a.b.c.d. format")
+    parser.add_argument('name', help="Provide  the domain name to query for")
 
     args = parser.parse_args()
 
