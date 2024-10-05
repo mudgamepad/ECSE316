@@ -106,9 +106,6 @@ def build_request(args):
     # Combine header and question
     packet = header + question
 
-    print("Built packet (hex):", packet.hex())
-    print("Packet length:", len(packet))
-
     return packet, request_type
 
 
@@ -142,8 +139,6 @@ def send_request(args, packet, request_type):
 
             sock.close()
 
-            print("Response packet (hex):", response.hex())
-
             return response
 
         # Try to send the packet again if no response within socket timeout
@@ -164,25 +159,25 @@ def send_request(args, packet, request_type):
 
 def parse_response(response):
 
-    # Extract number of response records from header
+    # Parse header
     header = response[:12]
 
     # Get AA
     flags = int.from_bytes(header[2:4], 'big')
     aa = (flags & 0x04) >> 2  # 0x04 = 0000 0100, then shift right by 2 to see if bit = 0, 1
 
-    # Get number of records in all sections
+    # Extract counts from different sections
     qd_count = int.from_bytes(header[4:6], 'big')
     an_count = int.from_bytes(header[6:8], 'big')  # number of resource records in Answer section
     ns_count = int.from_bytes(header[8:10], 'big')  # number of name server resource records in Authority section
     ar_count = int.from_bytes(header[10:12], 'big')  # number of resource records in Additional records section
 
-    # No records found
+    # If no Answer or Additional records, exit
     if an_count == 0 and ar_count == 0:
         print(f"NOT FOUND")
         sys.exit(1)
 
-    index = 12  # header is 12 bytes long
+    index = 12  # Start parsing after header (header is 12 bytes long)
 
     # Skip over Question section
     for _ in range(qd_count):
@@ -190,14 +185,14 @@ def parse_response(response):
         while response[index] != 0:  # 0 indicates the end of QNAME
             index += 1
 
-        # Skip zero-length octet(1) + QTYPE(2) + QCLASS(2) = 5
+        # Skip zero-length octet(1) + QTYPE(2) + QCLASS(2) = 5 bytes
         index += 5
 
-    # Read Answer section
+    # Parse Answer section
     if an_count > 0:
         print(f"***Answer Section ({an_count} record(s))***")
 
-        for i in range(an_count):
+        for _ in range(an_count):
             index = parse_record(response, index, aa)
 
     # Skip over Authority section
@@ -206,7 +201,7 @@ def parse_response(response):
         while response[index] != 0:
             index += 1
 
-        # Skip zero-length octet(1) + TYPE(2) + CLASS(2) + TTL(4) = 9
+        # Skip NAME + TYPE(2) + CLASS(2) + TTL(4) = 9 bytes
         index += 9
 
         # Get RDLENGTH
@@ -215,17 +210,17 @@ def parse_response(response):
         # Skip RDLENGTH(2), RDATA(1 * RDLENGTH)
         index += 2 + rd_length
 
-    # Read Additional section
+    # Parse Additional section
     if ar_count > 0:
         print(f"***Additional Section ({ar_count} record(s))***")
 
-        for i in range(ar_count):
+        for _ in range(ar_count):
             index = parse_record(response, index, aa)
 
 
 def parse_record(response, index, aa):
 
-    # Get NAME
+    # Parse NAME
 
     # Name compression
     if (response[index] & 0xC0) == 0xC0:  # Check if first 2 bits of NAME are 11
@@ -234,67 +229,91 @@ def parse_record(response, index, aa):
         name, _ = parse_name(response, offset)
         index += 2
 
+    #  No name compression
     else:
-        #  No name compression
         name, index = parse_name(response, index)
 
-    # Get TYPE
-    dns_type = int.from_bytes(response[index:index+2], 'big')
+    # Parse TYPE
+    record_type = int.from_bytes(response[index:index+2], 'big')
     index += 2
 
-    # Get CLASS
-    dns_class = int.from_bytes(response[index:index+2], 'big')
+    # Parse CLASS
+    record_class = int.from_bytes(response[index:index+2], 'big')
 
     # Unexpected CLASS
-    if dns_class != 0x0001:  # Only handle Internet address
-        print(f"ERROR   Unexpected response: Answer CLASS {dns_class} cannot be interpreted. Only 0x0001 (IN) accepted")
+    if record_class != 0x0001:  # Only handle Internet address
+        print(f"ERROR   Unexpected response: Answer CLASS {record_class} cannot be interpreted. Only 0x0001 (IN) "
+              f"accepted")
         sys.exit(1)
     index += 2
 
-    # Get TTL
+    # Parse TTL
     ttl = int.from_bytes(response[index:index+4], 'big')
     index += 4
 
-    # Get RDLENGTH
+    # Parse RDLENGTH
     rdlength = int.from_bytes(response[index:index+2], 'big')
     index += 2
 
-    # Get RDATA
+    # Parse RDATA based on TYPE
     rdata = response[index:index+rdlength]
     index += rdlength
 
     # Type A
-    if dns_type == 0x0001:
+    if record_type == 0x0001:
         ip = ".".join(str(octet) for octet in rdata)  # IP address
         print(f"IP  {ip}  {ttl}   {aa}")
 
     # Type NS
-    elif dns_type == 0x0002:
+    elif record_type == 0x0002:
         ns_name, _ = parse_name(response, index - rdlength)
         print(f"NS  {ns_name}  {ttl}   {aa}")
 
     # Type CNAME
-    elif dns_type == 0x0005:
+    elif record_type == 0x0005:
         cname, _ = parse_name(response, index - rdlength)
         print(f"CNAME  {cname}  {ttl}   {aa}")
 
     # Type MX
-    elif dns_type == 0x000f:
+    elif record_type == 0x000f:
         exchange, _ = parse_name(response, index - rdlength + 2)  # first 2 bytes are preference
         print(f"MX  {exchange}  {ttl}   {aa}")
 
     # Unrecognized TYPE
     else:
-        print(f"ERROR   Unexpected response: Unrecognized answer TYPE {dns_type}. TYPE must be 0x0001 (A), 0x0002 ("
+        print(f"ERROR   Unexpected response: Unrecognized answer TYPE {record_type}. TYPE must be 0x0001 (A), 0x0002 ("
               f"NS), 0x0005 (CNAME) or 0x000f (MX)")
         sys.exit(1)
 
     return index
 
 
-# TODO implement parse_name
 def parse_name(response, index):
-    return response, index
+    labels = []  # store labels
+
+    while True:
+        length = response[index]  # retrieve first byte of name
+
+        # Pointer
+        if (length & 0xC0) == 0xC0:  # if the first 2 bits = '11' name is a pointer
+            offset = int.from_bytes(response[index:index+2], 'big') & 0x3FFF  # retrieve 14 offset bits
+            name, _ = parse_name(response, offset)  # get name from pointer
+            labels.append(name)
+            index += 2  # skip over pointer bytes
+            break  # end of name field
+
+        elif length == 0:   # byte = 0 indicates end of name
+            index += 1  # move past the zero-length octet
+            break
+
+        else:
+            index += 1
+
+            label = response[index:index+length].decode()
+            labels.append(label)
+            index += length
+
+    return ".".join(labels), index
 
 
 def main():
