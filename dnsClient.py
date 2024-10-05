@@ -154,19 +154,88 @@ def send_request(args, packet, request_type):
     sys.exit(1)
 
 
-def parse_response(packet):
+def parse_response(response):
 
-    # Check if packet contains records in the answer section
-    num_answers = 0
+    # Extract number of response records from header
+    header = response[:12]
+    qd_count = int.from_bytes(header[4:6], 'big')
+    an_count = int.from_bytes(header[6:8], 'big')  # number of resource records in Answer section
+    ns_count = int.from_bytes(header[8:10], 'big')  # number of name server resource records in Authority section
+    ar_count = int.from_bytes(header[10:12], 'big')  # number of resource records in Additional records section
 
-    if num_answers > 0:
-        print(f"Answer Section ({num_answers} records)")
-
-        # TODO handle A, MX, NS, CNAME records
-        # TODO handle unexpected response
-    else:
+    # No records found
+    if an_count == 0 and ar_count == 0:
         print(f"NOT FOUND")
         sys.exit(1)
+
+    index = 12  # header is 12 bytes long
+
+    # Skip over Question section
+    for _ in range(qd_count):
+        # Skip QNAME
+        while response[index] != 0:  # 0 indicates the end of QNAME
+            index += 1
+
+        # Skip zero-length octet(1) + QTYPE(2) + QCLASS(2) = 5
+        index += 5
+
+    # Read Answer section
+    if an_count > 0:
+        print(f"***Answer Section ({an_count} records)***")
+
+        for i in range(an_count):
+            index = parse_record(response, index)
+
+    # Skip over Authority section
+    for _ in range(ns_count):
+        # Skip NAME
+        while response[index] != 0:
+            index += 1
+
+        # Skip zero-length octet(1) + TYPE(2) + CLASS(2) + TTL(4) = 9
+        index += 9
+
+        # Get RDLENGTH
+        rd_length = int.from_bytes(response[index:index+2], 'big')
+
+        # Skip RDLENGTH(2), RDATA(1 * RDLENGTH)
+        index += 2 + rd_length
+
+    # Read Additional section
+    if ar_count > 0:
+        print(f"***Additional Section ({ar_count} records)***")
+
+        for i in range(ar_count):
+            index = parse_record(response, index)
+
+
+def parse_record(response, index):
+    name_index = index
+
+    # NAME, TYPE, CLASS, TTL, RDLENGTH, RDATA
+
+    while response[index] != 0:
+        index += 1
+
+    name = int.from_bytes(response[name_index:index], 'big')  # check for correct index
+
+    # TODO Check for name compression
+
+    dns_type = int.from_bytes(response[index:index+2])
+    index += 2
+
+    dns_class = int.from_bytes(response[index:index+2], 'big')
+    index += 2
+
+    ttl = int.from_bytes(response[index:index+4], 'big')
+    index += 4
+
+    rdlength = int.from_bytes(response[index:index+2], 'big')
+    index += 2
+
+    # TODO Handle rdata depending on record type (dns_type)
+
+    return index
 
 
 def main():
