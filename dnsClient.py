@@ -19,8 +19,8 @@ def parse_args():
     group.add_argument('-mx', action='store_true')  # send MX (mail server)
     group.add_argument('-ns', action='store_true')  # send NS (name server)
 
-    parser.add_argument('server', help="Provide IPv4 address of the DNS server, in a.b.c.d. format")
-    parser.add_argument('name', help="Provide  the domain name to query for")
+    parser.add_argument('server', type=str, help="Provide IPv4 address of the DNS server, in a.b.c.d. format")
+    parser.add_argument('name', type=str, help="Provide  the domain name to query for")
 
     args = parser.parse_args()
 
@@ -51,7 +51,7 @@ def validate_args(args):
     ip_segments = ip.split('.')
 
     # ip address must have 4 numbers delineated by periods, each number in range [0, 255]
-    if len(ip_segments != 4):
+    if len(ip_segments) != 4:
         is_error = True
         error += f"ERROR    Invalid server IP address format. Must be in 'a.b.c.d' format\n"
 
@@ -106,13 +106,20 @@ def build_request(args):
     # Combine header and question
     packet = header + question
 
+    print("Built packet (hex):", packet.hex())
+    print("Packet length:", len(packet))
+
     return packet, request_type
 
 
 def send_request(args, packet, request_type):
     # Initial printout
     print(f"DnsClient sending request for {args.name}")
-    print(f"Server: {args.server}")
+
+    # Strip @ from ip
+    ip = args.server.lstrip('@')
+    print(f"Server: {ip}")
+
     print(f"Request type: {request_type}")
 
     # Create UDP socket
@@ -125,27 +132,28 @@ def send_request(args, packet, request_type):
 
     while num_retries <= args.max_retries:
         try:
-            # Strip @ from ip
-            ip = args.server.lstrip('@')
 
             # Send DNS query
             sock.sendto(packet, (ip, args.port))
 
-            response = sock.recvfrom(512)
+            response, _ = sock.recvfrom(512)
 
             print(f"Response received after {time.time() - start_time} seconds ({num_retries} retries)")
 
             sock.close()
 
+            print("Response packet (hex):", response.hex())
+
             return response
 
         # Try to send the packet again if no response within socket timeout
         except socket.timeout:
+            print(f"No response within {args.timeout} seconds")
             num_retries += 1
 
         # General error handling
         except Exception as e:
-            print(f"ERROR   {e}")
+            print(f"ERROR   Unexpected response: {e}")
             sys.exit(1)
 
     # No success before max retries
@@ -160,7 +168,7 @@ def parse_response(response):
     header = response[:12]
 
     # Get AA
-    flags = int.from_bytes(header[2], 'big')
+    flags = int.from_bytes(header[2:4], 'big')
     aa = (flags & 0x04) >> 2  # 0x04 = 0000 0100, then shift right by 2 to see if bit = 0, 1
 
     # Get number of records in all sections
@@ -187,7 +195,7 @@ def parse_response(response):
 
     # Read Answer section
     if an_count > 0:
-        print(f"***Answer Section ({an_count} records)***")
+        print(f"***Answer Section ({an_count} record(s))***")
 
         for i in range(an_count):
             index = parse_record(response, index, aa)
@@ -209,7 +217,7 @@ def parse_response(response):
 
     # Read Additional section
     if ar_count > 0:
-        print(f"***Additional Section ({ar_count} records)***")
+        print(f"***Additional Section ({ar_count} record(s))***")
 
         for i in range(ar_count):
             index = parse_record(response, index, aa)
@@ -231,13 +239,15 @@ def parse_record(response, index, aa):
         name, index = parse_name(response, index)
 
     # Get TYPE
-    dns_type = int.from_bytes(response[index:index+2])
+    dns_type = int.from_bytes(response[index:index+2], 'big')
     index += 2
 
     # Get CLASS
     dns_class = int.from_bytes(response[index:index+2], 'big')
-    if dns_class != 0x0001:
-        # TODO print error message
+
+    # Unexpected CLASS
+    if dns_class != 0x0001:  # Only handle Internet address
+        print(f"ERROR   Unexpected response: Answer CLASS {dns_class} cannot be interpreted. Only 0x0001 (IN) accepted")
         sys.exit(1)
     index += 2
 
@@ -273,9 +283,10 @@ def parse_record(response, index, aa):
         exchange, _ = parse_name(response, index - rdlength + 2)  # first 2 bytes are preference
         print(f"MX  {exchange}  {ttl}   {aa}")
 
-    # Unrecognized Type
+    # Unrecognized TYPE
     else:
-        # TODO print error message
+        print(f"ERROR   Unexpected response: Unrecognized answer TYPE {dns_type}. TYPE must be 0x0001 (A), 0x0002 ("
+              f"NS), 0x0005 (CNAME) or 0x000f (MX)")
         sys.exit(1)
 
     return index
