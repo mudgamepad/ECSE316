@@ -158,6 +158,12 @@ def parse_response(response):
 
     # Extract number of response records from header
     header = response[:12]
+
+    # Get AA
+    flags = int.from_bytes(header[2], 'big')
+    aa = (flags & 0x04) >> 2  # 0x04 = 0000 0100, then shift right by 2 to see if bit = 0, 1
+
+    # Get number of records in all sections
     qd_count = int.from_bytes(header[4:6], 'big')
     an_count = int.from_bytes(header[6:8], 'big')  # number of resource records in Answer section
     ns_count = int.from_bytes(header[8:10], 'big')  # number of name server resource records in Authority section
@@ -184,7 +190,7 @@ def parse_response(response):
         print(f"***Answer Section ({an_count} records)***")
 
         for i in range(an_count):
-            index = parse_record(response, index)
+            index = parse_record(response, index, aa)
 
     # Skip over Authority section
     for _ in range(ns_count):
@@ -206,36 +212,78 @@ def parse_response(response):
         print(f"***Additional Section ({ar_count} records)***")
 
         for i in range(ar_count):
-            index = parse_record(response, index)
+            index = parse_record(response, index, aa)
 
 
-def parse_record(response, index):
-    name_index = index
+def parse_record(response, index, aa):
 
-    # NAME, TYPE, CLASS, TTL, RDLENGTH, RDATA
+    # Get NAME
 
-    while response[index] != 0:
-        index += 1
+    # Name compression
+    if (response[index] & 0xC0) == 0xC0:  # Check if first 2 bits of NAME are 11
+        # Name is a pointer
+        offset = int.from_bytes(response[index:index+2], 'big') & 0x3FFF  # extract 14-bit offset
+        name, _ = parse_name(response, offset)
+        index += 2
 
-    name = int.from_bytes(response[name_index:index], 'big')  # check for correct index
+    else:
+        #  No name compression
+        name, index = parse_name(response, index)
 
-    # TODO Check for name compression
-
+    # Get TYPE
     dns_type = int.from_bytes(response[index:index+2])
     index += 2
 
+    # Get CLASS
     dns_class = int.from_bytes(response[index:index+2], 'big')
+    if dns_class != 0x0001:
+        # TODO print error message
+        sys.exit(1)
     index += 2
 
+    # Get TTL
     ttl = int.from_bytes(response[index:index+4], 'big')
     index += 4
 
+    # Get RDLENGTH
     rdlength = int.from_bytes(response[index:index+2], 'big')
     index += 2
 
-    # TODO Handle rdata depending on record type (dns_type)
+    # Get RDATA
+    rdata = response[index:index+rdlength]
+    index += rdlength
+
+    # Type A
+    if dns_type == 0x0001:
+        ip = ".".join(str(octet) for octet in rdata)  # IP address
+        print(f"IP  {ip}  {ttl}   {aa}")
+
+    # Type NS
+    elif dns_type == 0x0002:
+        ns_name, _ = parse_name(response, index - rdlength)
+        print(f"NS  {ns_name}  {ttl}   {aa}")
+
+    # Type CNAME
+    elif dns_type == 0x0005:
+        cname, _ = parse_name(response, index - rdlength)
+        print(f"CNAME  {cname}  {ttl}   {aa}")
+
+    # Type MX
+    elif dns_type == 0x000f:
+        exchange, _ = parse_name(response, index - rdlength + 2)  # first 2 bytes are preference
+        print(f"MX  {exchange}  {ttl}   {aa}")
+
+    # Unrecognized Type
+    else:
+        # TODO print error message
+        sys.exit(1)
 
     return index
+
+
+# TODO implement parse_name
+def parse_name(response, index):
+    return response, index
 
 
 def main():
