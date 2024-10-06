@@ -14,21 +14,19 @@ def parse_args():
     # unanswered query before giving up
     parser.add_argument('-p', '--port', type=int, default=53)  # UDP port number of the DNS server
 
-    # Create mutually exclusive group for mx, ns
+    # Create mutually exclusive group for mx and ns (only one should be true at a time)
     group = parser.add_mutually_exclusive_group()
     group.add_argument('-mx', action='store_true')  # send MX (mail server)
     group.add_argument('-ns', action='store_true')  # send NS (name server)
 
-    parser.add_argument('server', type=str, help="Provide IPv4 address of the DNS server, in a.b.c.d. format")
-    parser.add_argument('name', type=str, help="Provide  the domain name to query for")
+    parser.add_argument('server', type=str)  # IPv4 address of the DNS server
+    parser.add_argument('name', type=str)  # domain name to query for
 
-    args = parser.parse_args()
-
-    return args
+    return parser.parse_args()
 
 
 def validate_args(args):
-    error = ""
+    error = ""  # keep track of total error message
     is_error = False
 
     # Validate timeout
@@ -50,16 +48,18 @@ def validate_args(args):
     ip = args.server.lstrip('@')  # remove leading '@' if there is one
     ip_segments = ip.split('.')
 
-    # ip address must have 4 numbers delineated by periods, each number in range [0, 255]
+    # ip address must be in a.b.c.d format
     if len(ip_segments) != 4:
         is_error = True
         error += f"ERROR    Invalid server IP address format. Must be in 'a.b.c.d' format\n"
 
+    # only print if an error was encountered
     if is_error:
         print(error)
         sys.exit(1)
 
 
+# From input arguments, construct packet
 def build_request(args):
 
     # Build header
@@ -83,8 +83,8 @@ def build_request(args):
 
     # Encode q_name
     labels = args.name.split('.')  # split domain name into labels
-    q_name = b''.join(len(label).to_bytes(1, 'big') + label.encode() for label in labels)  # encode converts string
-    # into byte representation
+    q_name = b''.join(len(label).to_bytes(1, 'big') + label.encode() for label in labels)  # create byte string by
+    # encoding each label into byte representation
     q_name += b'\x00'  # delimit end of q_name
 
     # Change query type field depending on mx/ns field
@@ -106,16 +106,25 @@ def build_request(args):
     # Combine header and question
     packet = header + question
 
-    return packet, request_type
+    return packet
 
 
-def send_request(args, packet, request_type):
+# Send packet using UDP socket to IP with PORT
+def send_request(args, packet):
     # Initial printout
-    print(f"DnsClient sending request for {args.name}")
+    print(f"DNS client sending request for {args.name}")
 
     # Strip @ from ip
     ip = args.server.lstrip('@')
     print(f"Server: {ip}")
+
+    # Set request type depending on flag
+    if args.mx:
+        request_type = "MX"
+    elif args.ns:
+        request_type = "NS"
+    else:
+        request_type = "A"
 
     print(f"Request type: {request_type}")
 
@@ -127,47 +136,48 @@ def send_request(args, packet, request_type):
     num_retries = 0  # keep track of retries
     start_time = time.time()  # timer
 
+    # If no response within socket timeout, try again up to max_retries attempts
     while num_retries <= args.max_retries:
         try:
 
-            # Send DNS query
+            # Send DNS query to IP, PORT
             sock.sendto(packet, (ip, args.port))
 
-            response, _ = sock.recvfrom(512)
+            response, _ = sock.recvfrom(512)  # attempt to get a response packet
 
             print(f"Response received after {time.time() - start_time} seconds ({num_retries} retries)")
 
-            sock.close()
+            sock.close()  # Close socket once response received
 
             return response
 
-        # Try to send the packet again if no response within socket timeout
+        # Update number of attempts after failed attempt
         except socket.timeout:
-            print(f"No response within {args.timeout} seconds")
             num_retries += 1
 
-        # General error handling
+        # General error handling for unexpected response
         except Exception as e:
             print(f"ERROR   Unexpected response: {e}")
             sys.exit(1)
 
     # No success before max retries
     print(f"ERROR   Maximum number of retries {args.max_retries} exceeded")
-    sock.close()
+    sock.close()  # close socket if no response
     sys.exit(1)
 
 
+# Parse all records in Answer and Additional sections
 def parse_response(response):
 
     # Parse header
     header = response[:12]
 
-    # Get AA
+    # Get AA (authoritative if True)
     flags = int.from_bytes(header[2:4], 'big')
-    aa = (flags & 0x04) >> 2  # 0x04 = 0000 0100, then shift right by 2 to see if bit = 0, 1
+    aa = (flags & 0x04) >> 2  # 0x04 = 0000 0100, then shift right by 2 to get bit
 
     # Extract counts from different sections
-    qd_count = int.from_bytes(header[4:6], 'big')
+    qd_count = int.from_bytes(header[4:6], 'big')  # number of entries in Question section
     an_count = int.from_bytes(header[6:8], 'big')  # number of resource records in Answer section
     ns_count = int.from_bytes(header[8:10], 'big')  # number of name server resource records in Authority section
     ar_count = int.from_bytes(header[10:12], 'big')  # number of resource records in Additional records section
@@ -177,7 +187,7 @@ def parse_response(response):
         print(f"NOT FOUND")
         sys.exit(1)
 
-    index = 12  # Start parsing after header (header is 12 bytes long)
+    index = 12  # index keeps track of current byte in response packet (skipped 12 -> header is 12 bytes)
 
     # Skip over Question section
     for _ in range(qd_count):
@@ -188,10 +198,12 @@ def parse_response(response):
         # Skip zero-length octet(1) + QTYPE(2) + QCLASS(2) = 5 bytes
         index += 5
 
-    # Parse Answer section
+    # Parse Answer section if there is at least one record
     if an_count > 0:
-        print(f"***Answer Section ({an_count} record(s))***")
+        print(f"***Answer Section ({an_count} {'record' if an_count == 1 else 'records'})***")  # print record if 1
+        # record, records if more than 1 record
 
+        # Parse all records in Answer section
         for _ in range(an_count):
             index = parse_record(response, index, aa)
 
@@ -199,30 +211,33 @@ def parse_response(response):
     for _ in range(ns_count):
         # Skip NAME
         while response[index] != 0:
-            index += 1
+            index += 1  # NAME is 1 byte long
 
         # Skip NAME + TYPE(2) + CLASS(2) + TTL(4) = 9 bytes
         index += 9
 
         # Get RDLENGTH
-        rd_length = int.from_bytes(response[index:index+2], 'big')
+        rd_length = int.from_bytes(response[index:index+2], 'big')  # Skip 2 bytes from RDLENGTH
 
         # Skip RDLENGTH(2), RDATA(1 * RDLENGTH)
         index += 2 + rd_length
 
-    # Parse Additional section
+    # Parse Additional section if there is at least one record
     if ar_count > 0:
-        print(f"***Additional Section ({ar_count} record(s))***")
+        print(f"***Additional Section ({ar_count} {'record' if ar_count == 1 else 'records'})***")  # print record if 1
+        # record, records if more than 1 record
 
+        # Parse all records in Additional section
         for _ in range(ar_count):
             index = parse_record(response, index, aa)
 
 
+# Parse given record and printout record contents
 def parse_record(response, index, aa):
 
     # Parse NAME
 
-    # Name compression
+    # Handle name compression
     if (response[index] & 0xC0) == 0xC0:  # Check if first 2 bits of NAME are 11
         # Name is a pointer
         offset = int.from_bytes(response[index:index+2], 'big') & 0x3FFF  # extract 14-bit offset
@@ -259,25 +274,30 @@ def parse_record(response, index, aa):
     rdata = response[index:index+rdlength]
     index += rdlength
 
+    if aa:
+        auth = "auth"
+    else:
+        auth = "nonauth"
+
     # Type A
     if record_type == 0x0001:
-        ip = ".".join(str(octet) for octet in rdata)  # IP address
-        print(f"IP  {ip}  {ttl}   {aa}")
+        ip = ".".join(str(octet) for octet in rdata)
+        print(f"IP  {ip}    {ttl}   {auth}")
 
     # Type NS
     elif record_type == 0x0002:
         ns_name, _ = parse_name(response, index - rdlength)
-        print(f"NS  {ns_name}  {ttl}   {aa}")
+        print(f"NS  {ns_name}  {ttl}  {auth}")
 
     # Type CNAME
     elif record_type == 0x0005:
         cname, _ = parse_name(response, index - rdlength)
-        print(f"CNAME  {cname}  {ttl}   {aa}")
+        print(f"CNAME  {cname}  {ttl}  {auth}")
 
     # Type MX
     elif record_type == 0x000f:
         exchange, _ = parse_name(response, index - rdlength + 2)  # first 2 bytes are preference
-        print(f"MX  {exchange}  {ttl}   {aa}")
+        print(f"MX  {exchange}  {ttl}  {auth}")
 
     # Unrecognized TYPE
     else:
@@ -288,6 +308,7 @@ def parse_record(response, index, aa):
     return index
 
 
+# Resolve name compression
 def parse_name(response, index):
     labels = []  # store labels
 
@@ -297,21 +318,24 @@ def parse_name(response, index):
         # Pointer
         if (length & 0xC0) == 0xC0:  # if the first 2 bits = '11' name is a pointer
             offset = int.from_bytes(response[index:index+2], 'big') & 0x3FFF  # retrieve 14 offset bits
-            name, _ = parse_name(response, offset)  # get name from pointer
+            name, _ = parse_name(response, offset)  # get name from response at pointer location
             labels.append(name)
             index += 2  # skip over pointer bytes
-            break  # end of name field
+            break  # end of compressed name field
 
-        elif length == 0:   # byte = 0 indicates end of name
+        # Non-compressed name
+
+        # End of name
+        elif length == 0:   # a byte of 0 indicates end of name
             index += 1  # move past the zero-length octet
-            break
+            break  # end of non-compressed name field
 
+        # Parse next byte of name
         else:
             index += 1
-
-            label = response[index:index+length].decode()
+            label = response[index:index+length].decode()  # convert byte to string
             labels.append(label)
-            index += length
+            index += length  # move index past current label
 
     return ".".join(labels), index
 
@@ -324,10 +348,10 @@ def main():
     validate_args(args)
 
     # Construct request packet
-    packet, request_type = build_request(args)
+    packet = build_request(args)
 
     # Send request packet using sockets
-    response = send_request(args, packet, request_type)
+    response = send_request(args, packet)
 
     # Parse response
     parse_response(response)
