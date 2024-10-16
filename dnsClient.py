@@ -106,7 +106,7 @@ def build_request(args):
     # Combine header and question
     packet = header + question
 
-    return packet
+    return packet, request_id
 
 
 # Send packet using UDP socket to IP with PORT
@@ -164,6 +164,36 @@ def send_request(args, packet):
     print(f"ERROR   Maximum number of retries {args.max_retries} exceeded")
     sock.close()  # close socket if no response
     sys.exit(1)
+
+
+# Validate response packet
+def validate_response(response, request_id):
+
+    # Response should be at least 12 bytes long
+    if len(response) < 12:
+        print("ERROR: Response packet is too short")
+        return False
+
+    # Response id and request id should match
+    response_id = int.from_bytes(response[:2], 'big')
+    if response_id != request_id:
+        print("ERROR: Response ID does not match request ID")
+        return False
+
+    flags = int.from_bytes(response[2:4], 'big')
+
+    # Check if packet is a response
+    if (flags & 0x8000) == 0:
+        print("ERROR: Response is not a valid DNS response (QR = 0)")
+        return False
+
+    # Check RCODE non-zero (means there is an error)
+    rcode = flags & 0x000F
+    if rcode != 0:
+        print(f"ERROR: DNS query failed with RCODE {rcode}")
+        return False
+
+    return True
 
 
 # Parse all records in Answer and Additional sections
@@ -348,10 +378,17 @@ def main():
     validate_args(args)
 
     # Construct request packet
-    packet = build_request(args)
+    packet, request_id = build_request(args)
 
     # Send request packet using sockets
     response = send_request(args, packet)
+
+    # Validate response packet
+    valid = validate_response(response, request_id)
+
+    # If response packet is invalid, exit
+    if not valid:
+        sys.exit(1)
 
     # Parse response
     parse_response(response)
