@@ -204,7 +204,7 @@ def parse_response(response):
 
     # Get AA (authoritative if True)
     flags = int.from_bytes(header[2:4], 'big')
-    aa = (flags & 0x04) >> 2  # 0x04 = 0000 0100, then shift right by 2 to get bit
+    aa = (flags & 0x0400) >> 2  # 0x04 = 0000 0100, then shift right by 2 to get bit
 
     # Extract counts from different sections
     qd_count = int.from_bytes(header[4:6], 'big')  # number of entries in Question section
