@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.image as mpimg
 
+
 def dft_naive(x):
     N = len(x)  # number of samples
     X = np.zeros(N, dtype=complex)  # initialize empty array, one value for each sample
@@ -15,29 +16,24 @@ def dft_naive(x):
 
     return X
 
-# Algorithm implementation inspired by Carleton University implementation: https://people.scs.carleton.ca/~maheshwa/courses/5703COMP/16Fall/FFT_Report.pdf
-def fft(x, threshold=16):
-    N = len(x)  # number of samples
 
-    if N <= threshold:
-        return dft_naive(x)  # TODO experiment with threshold for performance
+# Algorithm implementation inspired by Carleton University implementation:
+# https://people.scs.carleton.ca/~maheshwa/courses/5703COMP/16Fall/FFT_Report.pdf
+def fft(x):
+    N = len(x)
 
-    if N % 2 != 0:
-        raise ValueError("The input size must be a power of 2.")
+    # Base case for the recursion: if the input size is 1, return the input
+    if N <= 1:
+        return x
 
-    Wn = np.exp(2j * np.pi / N)
-    X_even = fft(x[::2])  # recursively compute fft for even-index elements
-    X_odd = fft(x[1::2])  # for odd-index elements
+    # Split the input into even and odd indexed parts
+    even = fft(x[::2])  # FFT on even-indexed elements
+    odd = fft(x[1::2])  # FFT on odd-indexed elements
 
-    X = np.zeros(N, dtype=complex)
-    w = 1
+    # Combine the results from the even and odd FFTs
+    T = np.exp(-2j * np.pi * np.arange(N // 2) / N) * odd
+    return np.concatenate([even + T, even - T])  # Combine the results (even + T and even - T)
 
-    for i in range (N // 2):
-        X[i] = X_even[i] + w * X_odd[i]  # compute first half of fft result
-        X[i + N // 2] = X_even[i] - w * X_odd[i]  # compute second half of fft result
-        w *= Wn
-
-    return X
 
 def fft2d(x):
     rows = np.apply_along_axis(fft, 1, x)
@@ -45,36 +41,28 @@ def fft2d(x):
 
     return result
 
-def fft2d_(x):
-    rows = np.apply_along_axis(np.fft.fft2(), 1, x)
-    result = np.apply_along_axis(np.fft.fft2(), 0, rows)
+
+def inv_fft(x):
+    N = len(x)
+    if N <= 1:
+        return x
+    even = inv_fft(x[::2])
+    odd = inv_fft(x[1::2])
+    T = np.exp(2j * np.pi * np.arange(N // 2) / N) * odd
+    return np.concatenate([even + T, even - T])
+
+
+def fft_inv2d(x):
+    rows = np.apply_along_axis(inv_fft, 1, x)
+    result = np.apply_along_axis(inv_fft, 0, rows)
 
     return result
 
+
 # Convert image to FFT form and display.
 def fast_mode(padded_image):
-    fft_result = fft2d_(padded_image)
-
-    # Shift the zero frequency component to the center of the spectrum
-    fft_shifted = np.fft.fftshift(fft_result)
-
-    # Calculate the magnitude and apply log scaling
-    magnitude = np.abs(fft_shifted)
-    log_magnitude = np.log1p(magnitude)  # Use log1p for better handling of zero values
-
-    # Plot original image and FFT result (log-scaled)
-    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-
-    axs[0].imshow(padded_image, cmap='gray')
-    axs[0].set_title('Original Image')
-    axs[0].axis('off')
-
-    im = axs[1].imshow(log_magnitude, cmap='gray', norm=colors.LogNorm())
-    axs[1].set_title('FFT (Log Scale)')
-    axs[1].axis('off')
-
-    plt.colorbar(im, ax=axs[1])
-    plt.show()
+    fft_result = fft2d(padded_image)
+    np_result = np.fft.fft2(padded_image)
 
 
 def pad_image(image):
@@ -100,15 +88,19 @@ def pad_image(image):
 
     return padded_image
 
+
 def show_image(image):
-    plt.figure(figsize=(6, 6))
+    # If the image is complex, show its magnitude or real part
+    if np.iscomplexobj(image):
+        # Show the magnitude spectrum (log scale for better visibility)
+        image = np.log(np.abs(image) + 1)  # Adding 1 to avoid log(0)
+
     plt.imshow(image, cmap='gray' if len(image.shape) == 2 else None)
-    plt.title('Padded Image')
-    plt.axis('off')  # Hide axis
+    plt.axis('off')
     plt.show()
 
-def main():
 
+def main():
     # Define arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--mode", type=int, choices=[1, 2, 3, 4], default=1)
@@ -119,9 +111,15 @@ def main():
     image_path = args.image
 
     image = mpimg.imread(image_path)
-    padded_image = pad_image(image)
+    # padded_image = pad_image(image)
+    padded_image = image
 
-    fast_mode(padded_image)
+    show_image(padded_image)
+    result = fft2d(padded_image)
+    show_image(result)
+    result = fft_inv2d(result)
+    show_image(result)
+
 
 if __name__ == "__main__":
     main()
