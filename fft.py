@@ -28,6 +28,10 @@ def pad_image(image):
     return padded_image
 
 
+def remove_padding(padded_image, original_shape):
+    return padded_image[:original_shape[0], :original_shape[1]]
+
+
 # Naive implementation of DFT
 def dft_naive(x):
     N = len(x)  # number of samples
@@ -91,7 +95,6 @@ def fft_inv(x):
 def fft2d(image):
     transformed_rows = np.array([fft(row) for row in image])
     transformed_cols = np.array([fft(col) for col in transformed_rows.T]).T
-
     return transformed_cols
 
 
@@ -99,19 +102,19 @@ def fft2d(image):
 def fft2d_inv(image):
     transformed_rows = np.array([fft_inv(row) for row in image])
     transformed_cols = np.array([fft_inv(col) for col in transformed_rows.T]).T
-    return transformed_cols
+    return transformed_cols / image.size
 
 
 def fast_mode(padded_image):
     # One by two subplot of original image
-    plt.subplot(1, 2, 1)
+    plt.subplot(1, 3, 1)
     plt.title("Original")
     plt.imshow(padded_image, cmap="gray")
     plt.axis("off")
 
     # One by two subplot of 2d fft
-    plt.subplot(1, 2, 2)
-    plt.title("fft")
+    plt.subplot(1, 3, 2)
+    plt.title("fft2d")
 
     # My fft on original image
     fft2d_result = fft2d(padded_image)
@@ -119,10 +122,80 @@ def fast_mode(padded_image):
     plt.imshow(magnitude, norm=LogNorm(), cmap="gray")
     plt.axis("off")
 
+    plt.subplot(1, 3, 3)
+    plt.title("np.fft.fft2")
+    np_result = np.fft.fft2(padded_image)
+    np_magnitude = np.abs(np_result)
+    plt.imshow(np_magnitude, norm=LogNorm(), cmap="gray")
+    plt.axis("off")
+
     plt.show()
 
 
-def denoise(padded_image):
+def denoise(padded_image, frequency_cutoff):
+    # Take fft of image
+    fft_result = fft2d(padded_image)
+
+    # TODO fix denoise
+    width, height = padded_image.shape
+    center_x, center_y = width // 2, height // 2
+
+    for x in range(width):
+        for y in range(height):
+            frequency = np.sqrt((x - center_x) ** 2 + (y - center_y) ** 2)  # frequency = distance from center of Fourier space
+
+            if frequency > frequency_cutoff:
+                fft_result[x, y] = 0
+
+    # Take inverse fft
+    denoised_image = fft2d_inv(fft_result)
+
+    # Plot the original and denoised images
+    plt.subplot(1, 2, 1)
+    plt.title("Original Image")
+    plt.imshow(padded_image, cmap="gray")
+    plt.axis("off")
+
+    plt.subplot(1, 2, 2)
+    plt.title("De-noised Image")
+    magnitude = np.abs(denoised_image)
+    plt.imshow(magnitude, cmap="gray")
+    plt.axis("off")
+
+    plt.show()
+    # TODO print ratio of cut/total frequencies
+
+
+def compress():
+    # Take fft of image
+    # Set some fourier coefficients to 0
+
+    # 1) threshold the coefficients’ magnitude and take only the largest percentile of them
+    # 2) keep all the coefficients of very low frequencies as well as a fraction of
+    # the largest coefficients from higher frequencies to also filter the image at the same time
+    # 3) Any other schemes?
+
+    # take inverse fft
+    # 2 by 3 subplot: 6 compression levels (including original image)
+    # Print number of non zeros that are in each of the 6 images
+    return
+
+
+def plot():
+    # Produce plots that summarize the runtime complexity of your algorithms. Your code should print in the
+    # command line the means and variances of the runtime of your algorithms versus
+    # the problem size
+
+    # From report: Create 2D arrays of random elements of various
+    # sizes (sizes must be square and powers of 2). Start from 25 and move
+    # up to 210 or up to the size that your computer can handle. Gather
+    # data for the plot by re-running the experiment at least 10 times
+    # to obtain an average runtime for each problem size and a standard
+    # deviation. On your plot you must have problem size on the x-axis
+    # and runtime in seconds on the y-axis. You can plot two lines; one
+    # for the naive method and one for the FFT. Plot your mean runtimes
+    # for each method and include error bars proportional to the standard
+    # deviation that represent a confidence interval defined by you.
     return
 
 
@@ -139,8 +212,8 @@ def main():
     original_image = mpimg.imread(image_path)
     padded_image = pad_image(original_image)
 
-    denoise(padded_image)
     #fast_mode(padded_image)
+    #denoise(padded_image, 570)  # 560-570 cutoff
 
 
 if __name__ == "__main__":
