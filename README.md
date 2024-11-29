@@ -1,3 +1,4 @@
-No special instructions for running the program. Simply run from the command line using the arguments outlined in the instructions.
+DNS Client
 
-Python Version: 3.11
+This command-line DNS client resolves various DNS requests and returns the domain name associated with the request IP address.
+It is implemented using Python sockets.
