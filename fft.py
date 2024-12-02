@@ -65,11 +65,10 @@ def fft(x):
         y[j] = y_even[j] + w * y_odd[j]
         y[j + n // 2] = y_even[j] - w * y_odd[j]
         w = w * w_n
-
     return y
 
 
-def fft_inv(x):
+def ifft(x):
     n = len(x)
 
     # Base case for the recursion: if the input size is 1, return the input
@@ -79,8 +78,8 @@ def fft_inv(x):
     w_n = np.exp(2j * np.pi / n)
     w = 1
 
-    y_even = fft_inv(x[::2])
-    y_odd = fft_inv(x[1::2])
+    y_even = ifft(x[::2])
+    y_odd = ifft(x[1::2])
 
     y = np.zeros(n, dtype=complex)
     for j in range(n // 2):
@@ -92,16 +91,16 @@ def fft_inv(x):
 
 
 # Get the fft of 2d image
-def fft2d(image):
+def fft2(image):
     transformed_rows = np.array([fft(row) for row in image])
     transformed_cols = np.array([fft(col) for col in transformed_rows.T]).T
     return transformed_cols
 
 
 # Get the inverse fft of a 2d image
-def fft2d_inv(image):
-    transformed_rows = np.array([fft_inv(row) for row in image])
-    transformed_cols = np.array([fft_inv(col) for col in transformed_rows.T]).T
+def ifft2(image):
+    transformed_rows = np.array([ifft(row) for row in image])
+    transformed_cols = np.array([ifft(col) for col in transformed_rows.T]).T
     return transformed_cols / image.size
 
 
@@ -117,7 +116,7 @@ def fast_mode(padded_image):
     plt.title("fft2d")
 
     # My fft on original image
-    fft2d_result = fft2d(padded_image)
+    fft2d_result = fft2(padded_image)
     magnitude = np.abs(fft2d_result)
     plt.imshow(magnitude, norm=LogNorm(), cmap="gray")
     plt.axis("off")
@@ -132,23 +131,22 @@ def fast_mode(padded_image):
     plt.show()
 
 
-def denoise(padded_image, frequency_cutoff):
+def denoise(padded_image, frequency_cutoff=390):
     # Take fft of image
-    fft_result = fft2d(padded_image)
+    fft_result = fft2(padded_image)
+    fft_result = np.fft.fftshift(fft_result)
 
-    # TODO fix denoise
     width, height = padded_image.shape
     center_x, center_y = width // 2, height // 2
+    y, x = np.ogrid[:width, :height]
+    distance_from_center = np.sqrt((x - center_x) ** 2 + (y - center_y) ** 2)
+    mask = distance_from_center <= frequency_cutoff
 
-    for x in range(width):
-        for y in range(height):
-            frequency = np.sqrt((x - center_x) ** 2 + (y - center_y) ** 2)  # frequency = distance from center of Fourier space
-
-            if frequency > frequency_cutoff:
-                fft_result[x, y] = 0
+    denoised_fft = fft_result * mask
+    denoised_fft = np.fft.fftshift(denoised_fft)
 
     # Take inverse fft
-    denoised_image = fft2d_inv(fft_result)
+    denoised_image = ifft2(denoised_fft)
 
     # Plot the original and denoised images
     plt.subplot(1, 2, 1)
@@ -157,7 +155,7 @@ def denoise(padded_image, frequency_cutoff):
     plt.axis("off")
 
     plt.subplot(1, 2, 2)
-    plt.title("De-noised Image")
+    plt.title(f"De-noised Image {frequency_cutoff}")
     magnitude = np.abs(denoised_image)
     plt.imshow(magnitude, cmap="gray")
     plt.axis("off")
@@ -212,9 +210,8 @@ def main():
     original_image = mpimg.imread(image_path)
     padded_image = pad_image(original_image)
 
-    #fast_mode(padded_image)
-    #denoise(padded_image, 570)  # 560-570 cutoff
-
+    denoise(padded_image)
+    
 
 if __name__ == "__main__":
     main()
