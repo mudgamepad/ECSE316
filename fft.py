@@ -165,7 +165,7 @@ def denoise(padded_image, frequency_cutoff=390):
 
     # Plot the denoised image
     plt.subplot(1, 2, 2)
-    plt.title(f"De-noised Image {frequency_cutoff}")
+    plt.title(f"De-noised Image (Cutoff={frequency_cutoff}hz)")
     magnitude = np.abs(denoised_image)
     plt.imshow(magnitude, cmap="gray")
     plt.axis("off")
