@@ -14,6 +14,8 @@ def pad_image(image):
     # Find the next power of 2 for height and width
     new_h = 2 ** np.ceil(np.log2(h)).astype(int)
     new_w = 2 ** np.ceil(np.log2(w)).astype(int)
+    print(new_w)
+    print(new_h)
 
     # Calculate padding needed
     pad_height = new_h - h
@@ -50,13 +52,15 @@ def fft(x):
     if n <= 1:
         return x
 
-    w_n = np.exp(-2j * np.pi / n)
+    w_n = np.exp(-2j * np.pi / n)  # compute twiddle factor
     w = 1
 
     y_even = fft(x[::2])  # recursively call fft on even-index elements
     y_odd = fft(x[1::2])  # on odd-index elements
 
     y = np.zeros(n, dtype=complex)  # initialize values
+
+    # Combine first and second half of result
     for j in range(n // 2):
         y[j] = y_even[j] + w * y_odd[j]
         y[j + n // 2] = y_even[j] - w * y_odd[j]
@@ -71,7 +75,7 @@ def ifft(x):
     if n <= 1:
         return x
 
-    w_n = np.exp(2j * np.pi / n)
+    w_n = np.exp(2j * np.pi / n)  # flipped sign for inverse
     w = 1
 
     y_even = ifft(x[::2])
@@ -83,7 +87,7 @@ def ifft(x):
         y[j + n // 2] = y_even[j] - w * y_odd[j]
         w = w * w_n
 
-    return y / n
+    return y / n  # scale by input size
 
 
 # Get the fft of 2d image
@@ -131,14 +135,14 @@ def fast_mode(padded_image):
 def denoise(padded_image, frequency_cutoff=390):
     # Take fft of image
     fft_result = fft2(padded_image)
-    fft_result = np.fft.fftshift(fft_result)  # shift result to center
+    fft_result = np.fft.fftshift(fft_result)  # shift low frequencies to center
 
     width, height = padded_image.shape  # get center point of 2d fourier transform
     center_x, center_y = width // 2, height // 2
 
     # Create mask by selecting frequencies below frequency cutoff
     y, x = np.ogrid[:width, :height]
-    distance_from_center = np.sqrt((x - center_x) ** 2 + (y - center_y) ** 2)
+    distance_from_center = np.sqrt((x - center_x) ** 2 + (y - center_y) ** 2)  # frequency = distance from center
     mask = distance_from_center <= frequency_cutoff
 
     # Count the number of non-zero coefficients in the mask
@@ -152,7 +156,7 @@ def denoise(padded_image, frequency_cutoff=390):
 
     # Apply mask to denoise
     denoised_fft = fft_result * mask
-    denoised_fft = np.fft.fftshift(denoised_fft)  # shift result to center
+    denoised_fft = np.fft.fftshift(denoised_fft)  # shift low frequencies to center
 
     # Take inverse fft
     denoised_image = ifft2(denoised_fft)
